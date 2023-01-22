@@ -1,0 +1,102 @@
+---
+- name: "Build Configuration for Backbone Link"
+  hosts: all
+
+  gather_facts: no
+  connection: local
+
+  pre_tasks:
+    - name: "Make sure -l limit is set"
+      fail:
+        msg: "Please use -l <site_hostname> limit"
+      when: ansible_limit is not defined
+      run_once: yes
+    - name: "Get IP address of inventory_hostname for lo0"
+      shell: "dig +short {{ inventory_hostname }}"
+      register: loopback
+    - name: "Print the Loopback IP"
+      debug:
+        msg: "{{ loopback.stdout }}"
+
+        #vars_prompt:
+          #- name: Input host_vars file
+          #prompt: "host_file"
+          #private: no
+  vars_files:
+    - host_vars/{{ host_file }}.yml
+    - "/home/daniel/Documents/ansible/network-build/group_vars/all.yml"
+    - "/home/daniel/Documents/ansible/network-build/group_vars/asia.yml"
+    - "/home/daniel/Documents/ansible/network-build/group_vars/america.yml"
+    - "/home/daniel/Documents/ansible/network-build/group_vars/europe.yml"
+
+
+  vars:
+    ansible_python_interpreter: "/usr/bin/python2.7"
+    ansible_network_os: "junos"
+    commit: false
+    _delegate: 127.0.0.1
+
+  roles:
+    - name: "Include Interface Role from Network-Build"
+      role: "/home/daniel/Documents/ansible/network-build/roles/interfaces"
+      # //TODO Will have to probably add in section for prefix-lists (BEFORE) policy-options
+      # // Need to create Local Polciy and Prefix List roles -
+      
+    #- name: "Include the Prefix-List Role from Local Folder"
+    #  role: "/home/daniel/Documents/ansible/services/backbone-ops/roles/prefix-list"
+    #- name: "Include Policy Options from Local Folder"
+    #  role: "/home/daniel/Documents/ansible/services/backbone-ops/roles/policy-options"
+      
+      # Protocols have to be imported BEFORE the protocols stanza
+    - name: "Include OSPF from Network Build"
+      role: "/home/daniel/Documents/ansible/network-build/roles/ospf"
+    - name: "Include LLDP from Network-Build"
+      role: "/home/daniel/Documents/ansible/network-build/roles/lldp"
+    - name: "Include LDP from Network-Build"
+      role: "/home/daniel/Documents/ansible/network-build/roles/ldp"
+    - name: "Include MPLS from Network-Build"
+      role: "/home/daniel/Documents/ansible/network-build/roles/mpls"
+      # This import needs to be done after the LDP neighor list is created
+    - name: "Include Prefix-List Role from Local Folder (mpls-ldp-neighbors variable is not set if imported before)"
+      role: "/home/daniel/Documents/ansible/services/backbone-ops/roles/prefix-list"
+    - name: "Include Policy Options from Local Folder"
+      role: "/home/daniel/Documents/ansible/services/backbone-ops/roles/policy-options"
+      # QoS Import
+    - name: "Include QoS Section from Network-Build"
+      role: "/home/daniel/Documents/ansible/network-build/roles/qos"
+      # Import the protocols stanza from Network-Build 
+    - name: "Include Protocol Role from Network-Build"
+      role: "/home/daniel/Documents/ansible/network-build/roles/protocols"
+
+  tasks:
+    - name: "Test the value of the host_vars path"
+      shell: " ls -lrt host_vars/{{ host_file }}.yml"
+      register: path
+      delegate_to: "{{ _delegate }}"
+    - name: "Print The Path"
+      debug:
+        msg: "{{ path.stdout }}"
+      delegate_to: "{{ _delegate }}"
+    - name: "Get the contents of the file"
+      shell: "cat host_vars/{{ host_file }}.yml"
+      register: contents
+      delegate_to: "{{ _delegate }}"
+    - name: "Print the contents"
+      debug:
+        msg: "{{ contents.stdout }}"
+      delegate_to: "{{ _delegate }}"
+    - name: "Check the LDP neighbors list"
+      debug:
+        msg: "{{ mpls_ldp_neighbors }}"
+      delegate_to: "{{ _delegate }}"
+    - name: "Generate the backbone interface configlet"
+      template:
+        src: "templates/{{ template_type }}.conf.j2"
+        dest: "configs/{{ host_file }}-{{ inventory_hostname }}.conf"
+      register: configuration
+      delegate_to: "{{ _delegate }}"
+    - name: Register config_changed
+      set_fact:
+        config_changed: configuration.changed
+      delegate_to: "{{ _delegate }}"
+
