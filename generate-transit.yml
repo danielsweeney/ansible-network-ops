@@ -1,0 +1,71 @@
+---
+- name: "Build BGP Transit connection"
+  hosts: all
+
+  gather_facts: no
+  connection: local
+  
+  pre_tasks:
+    - name: "Make sure -l limit is set"
+      fail:
+        msg: "Please use -l <site_location> limit"
+      when: ansible_limit is not defined
+      run_once: yes
+    - name: "Get IP of inventory_hostname for Lo0"
+      shell: "dig +short {{ inventory_hostname }}"
+      register: loopback
+    - name: Print the Loopback IP
+      debug:
+        msg: "{{ loopback.stdout }}"
+
+  vars_prompt:
+    - name: ticket_id
+      prompt: "ticket_id"
+      private: no
+  vars_files:
+    - host_vars/{{ ticket_id }}.yml
+    - "/home/daniel/Documents/ansible/network-build/group_vars/all.yml"
+    - "/home/daniel/Documents/ansible/network-build/group_vars/asia.yml"
+    - "/home/daniel/Documents/ansible/network-build/group_vars/europe.yml"
+    - "/home/daniel/Documents/ansible/network-build/group_vars/america.yml"
+
+  vars:
+    ansible_python_interpreter: "/usr/bin/python2.7"
+    ansible_network_os: "junos"
+    commit: false
+    _delegate: 127.0.0.1
+
+    #tasks: 
+    #- name: Load variables from Network-build
+    #  include_vars:
+    #    dir: /home/netops/ansible/playbooks/network-build/group_vars
+
+  roles:
+    - name: "Include Interface role"
+      role: "/home/daniel/Documents/ansible/network-build/roles/interfaces"
+      #- name: "Include pe-router role - BGP community list created here"
+      #role: "/home/daniel/Documents/ansible/network-build/roles/pe-router"
+      #- name: "Include Protocols where BGP is defined"
+      #role: "/home/daniel/Documents/ansible/network-build/roles/protocols"
+    - name: "Include BGP and BGP policy roles"
+      role: "/home/daniel/Documents/ansible/network-build/roles/bgp"
+    - name: "Include Local Prefix-List role"
+      role: "/home/daniel/Documents/ansible/services/transit-ops/roles/prefix-list"
+    - name: "Include Local Policy-Options role"
+      role: "/home/daniel/Documents/ansible/services/transit-ops/roles/policy-options"
+    - name: "Include Local BGP templates"
+      role: "/home/daniel/Documents/ansible/services/transit-ops/roles/bgp"
+    - name: "Include Local FW_Filter role, to enure antispoof is deployed"
+      role: "/home/daniel/Documents/ansible/services/transit-ops/roles/fw_filters"
+
+  tasks:
+    - name: Generate Config
+      template:
+        src: "templates/{{ bgp_type }}.conf.j2"
+        dest: "configs/{{ ticket_id }}-{{ inventory_hostname }}.conf"
+      register: configuration
+      delegate_to: "{{ _delegate }}"
+    - name: Register config_changed
+      set_fact:
+        config_changed: configuration.changed
+      delegate_to: "{{ _delegate }}"
