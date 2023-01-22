@@ -1,0 +1,51 @@
+---
+- name: "Build Configuration - Access VLANs"
+  hosts: all
+
+  gather_facts: no
+  connection: local
+  
+  pre_tasks:
+    # Ensure a limit is set so {{ inventory_hostname }} can be appended to ticked_id in config directory
+    - name: "Make sure -l limit is set"
+      fail:
+        msg: "Please use -l <site_location> limit"
+      when: ansible_limit is not defined
+      run_once: yes
+
+  vars_prompt:
+    - name: ticket_id
+      prompt: "ticket_id"
+      private: no
+  vars_files:
+    - host_vars/{{ ticket_id }}.yml
+
+  vars:
+    ansible_python_interpreter: "/usr/bin/python2.7"
+    ansible_network_os: "junos"
+    commit: false
+    _delegate: 127.0.0.1
+
+
+  roles:
+    - name: "Generate Access VLAN configlet - Interface and VLAN"
+      role: "/home/netops/ansible/playbooks/switches/roles/access_vlan_playbook"
+    - name: "Include interfaces role and template from switches directory"
+      role: "/home/netops/ansible/playbooks/switches/roles/interfaces"
+    - name: "Include VLAN role and template from switches directory"
+      role: "/home/netops/ansible/playbooks/switches/roles/vlans"
+
+  tasks:
+
+    - name: Generate Config
+      template:
+        src: "/home/netops/ansible/playbooks/switches/templates/{{ device_type }}.conf.j2"
+        #dest: "access-vlan-configs/{{ inventory_hostname }}.conf"
+        dest: "configs/{{ ticket_id }}-{{ inventory_hostname }}.conf"
+      register: configuration
+      delegate_to: "{{ _delegate }}"
+    - name: Register config_changed
+      set_fact:
+        config_changed: configuration.changed
+      delegate_to: "{{ _delegate }}"
+
